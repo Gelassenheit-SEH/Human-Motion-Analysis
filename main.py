@@ -151,11 +151,11 @@ def run_har_pipeline():
     )
 
     # 训练
-    scaler, knn, svm = train_classifiers(X_train, y_train)
+    scaler, knn, svm , rf = train_classifiers(X_train, y_train)
     X_test_s = scaler.transform(X_test)
 
     # 评估
-    evaluate_har(knn, svm, X_test_s, y_test, activities, OUTPUT_DIR)
+    evaluate_har(knn, svm, rf, X_test_s, y_test, activities, OUTPUT_DIR)
 
     print("\nHAR feature names:", feat_names[:10], "...")
 
@@ -173,7 +173,7 @@ def run_wisdm_pipeline():
     print(f"Raw samples: {len(raw_signals)}")
 
     # 完整流程 (prepare_wisdm 包含预处理 → 特征提取 → 分割 → 训练)
-    scaler, knn, svm, X_test, y_test = prepare_wisdm(DATA_DIR)
+    scaler, knn, svm, rf , X_test, y_test = prepare_wisdm(DATA_DIR)
 
     # 特征对比 (使用 scaler 之前的训练数据)
     from train import (
@@ -197,7 +197,7 @@ def run_wisdm_pipeline():
 
     # 评估 (测试集需要归一化)
     X_test_s = scaler.transform(X_test)
-    evaluate_wisdm(knn, svm, X_test_s, y_test, OUTPUT_DIR)
+    evaluate_wisdm(knn, svm, rf,X_test_s, y_test, OUTPUT_DIR)
 
 
 def run_har_visualization(activities):

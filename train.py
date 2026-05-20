@@ -11,6 +11,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
 
 from preprocessing import preprocess_wisdm
 from feature_extraction import extract_all_features
@@ -199,10 +200,13 @@ def train_classifiers(X_train, y_train, scaler_range=(-1, 1)):
     knn = KNeighborsClassifier(5)
     knn.fit(X_train_s, y_train)
 
-    svm = SVC(kernel='rbf', random_state=42)
+    svm = SVC(kernel='rbf', class_weight='balanced', random_state=42)
     svm.fit(X_train_s, y_train)
+    # 修改
+    rf = RandomForestClassifier(n_estimators=100, random_state=42)
+    rf.fit(X_train_s, y_train)
 
-    return scaler, knn, svm
+    return scaler, knn, svm,rf
 
 
 # ========== WISDM 全流程便利函数 ==========
@@ -240,9 +244,9 @@ def prepare_wisdm(data_dir='./dataset', test_size=0.3, random_state=42):
     print(f"WISDM train: {len(X_train)}, test: {len(X_test)}")
 
     # 训练
-    scaler, knn, svm = train_classifiers(X_train, y_train)
+    scaler, knn, svm ,rf = train_classifiers(X_train, y_train)
 
-    return scaler, knn, svm, X_test, y_test
+    return scaler, knn, svm, rf, X_test, y_test
 
 
 if __name__ == '__main__':
