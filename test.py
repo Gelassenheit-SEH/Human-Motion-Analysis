@@ -95,7 +95,7 @@ def plot_confusion_matrix(y_true, y_pred, labels, title, filepath, cmap='Blues')
     print(f'[Saved] {filepath}')
 
 
-def evaluate_har(knn, svm, X_test, y_test, activities, output_dir='output'):
+def evaluate_har(knn, svm, rf, X_test, y_test, activities, output_dir='output'):
     """HAR 完整评估: 准确率 + 分类报告 + 混淆矩阵"""
     print("\n--- HAR Classification ---")
 
@@ -106,6 +106,9 @@ def evaluate_har(knn, svm, X_test, y_test, activities, output_dir='output'):
     # SVM
     svm_acc, svm_pred = evaluate_model(svm, X_test, y_test)
     print(f"  {'SVM (RBF)':12s}  Acc: {svm_acc:.4f}")
+    # RF
+    rf_acc, rf_pred = evaluate_model(rf, X_test, y_test)
+    print(f"  {'RF (100)':12s}  Acc: {rf_acc:.4f}")
 
     # 分类报告
     print(f"\nClassification Report (SVM):")
@@ -118,6 +121,12 @@ def evaluate_har(knn, svm, X_test, y_test, activities, output_dir='output'):
     print(classification_report(
         [activities[y] for y in y_test],
         [activities[y] for y in knn_pred],
+        zero_division=0,
+    ))
+    print(f"\nClassification Report (RF):")
+    print(classification_report(
+        [activities[y] for y in y_test],
+        [activities[y] for y in rf_pred],
         zero_division=0,
     ))
 
@@ -134,11 +143,17 @@ def evaluate_har(knn, svm, X_test, y_test, activities, output_dir='output'):
         os.path.join(output_dir, 'har_cm_knn.png'),
         cmap='Blues',
     )
+    plot_confusion_matrix(
+        y_test, rf_pred, activities,
+        'HAR - RF Confusion Matrix',
+        os.path.join(output_dir, 'har_cm_rf.png'),
+        cmap='Greens',
+    )
 
-    return (knn_acc, knn_pred), (svm_acc, svm_pred)
+    return (knn_acc, knn_pred), (svm_acc, svm_pred), (rf_acc, rf_pred)
 
 
-def evaluate_wisdm(knn, svm, X_test, y_test, output_dir='output'):
+def evaluate_wisdm(knn, svm, rf, X_test, y_test, output_dir='output'):
     """WISDM 完整评估: 准确率 + 分类报告 + 混淆矩阵"""
     print(f"\n--- WISDM Classification ---")
 
@@ -150,11 +165,17 @@ def evaluate_wisdm(knn, svm, X_test, y_test, output_dir='output'):
     svm_acc, svm_pred = evaluate_model(svm, X_test, y_test)
     print(f"  {'SVM (RBF)':12s}  Acc: {svm_acc:.4f}")
 
+    # RF
+    rf_acc, rf_pred = evaluate_model(rf, X_test, y_test)
+    print(f"  {'RF (100)':12s}  Acc: {rf_acc:.4f}")
+
     # 分类报告
     print(f"\nClassification Report (SVM):")
     print(classification_report(y_test, svm_pred, zero_division=0))
     print(f"\nClassification Report (KNN):")
     print(classification_report(y_test, knn_pred, zero_division=0))
+    print(f"\nClassification Report (RF):")
+    print(classification_report(y_test, rf_pred, zero_division=0))
 
     # 混淆矩阵
     labels_sorted = sorted(np.unique(y_test))
@@ -170,8 +191,15 @@ def evaluate_wisdm(knn, svm, X_test, y_test, output_dir='output'):
         os.path.join(output_dir, 'wisdm_cm_knn.png'),
         cmap='Oranges',
     )
+    plot_confusion_matrix(
+        y_test, rf_pred, labels_sorted,
+        'WISDM - RF Confusion Matrix',
+        os.path.join(output_dir, 'wisdm_cm_rf.png'),
+        cmap='Greens',
+    )
 
-    return (knn_acc, knn_pred), (svm_acc, svm_pred)
+
+    return (knn_acc, knn_pred), (svm_acc, svm_pred), (rf_acc, rf_pred)
 
 
 if __name__ == '__main__':

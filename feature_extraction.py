@@ -21,7 +21,10 @@ def extract_time_features(signal_data):
     peak_to_peak = np.max(signal_data) - np.min(signal_data)
     mean_abs = np.mean(np.abs(signal_data))
     waveform_factor = rms_val / (mean_abs + 1e-10)
-
+     # === 新增：偏度、峰度、信号幅值面积 ===
+    skewness_val = np.mean((signal_data - mean_val) ** 3) / (var_val ** 1.5 + 1e-10)
+    kurtosis_val = np.mean((signal_data - mean_val) ** 4) / (var_val ** 2 + 1e-10)
+    sma_val = np.sum(np.abs(signal_data))
     return {
         'mean': mean_val,
         'var': var_val,
@@ -30,6 +33,9 @@ def extract_time_features(signal_data):
         'peak': peak_val,
         'peak_to_peak': peak_to_peak,
         'waveform_factor': waveform_factor,
+        'skewness': skewness_val,       # 新增
+        'kurtosis': kurtosis_val,       # 新增
+        'sma': sma_val,                 # 新增
     }
 
 
@@ -53,7 +59,14 @@ def extract_freq_features(signal_data, fs, bands):
 
     # 频谱质心
     spectral_centroid = np.sum(freqs * magnitude) / (np.sum(magnitude) + 1e-10)
+    
+    # === 新增：主频（能量最大的频率）===
+    dominant_frequency = freqs[np.argmax(magnitude)]
 
+    # === 新增：频谱熵 ===
+    prob = magnitude / (np.sum(magnitude) + 1e-10)
+    spectral_entropy = -np.sum(prob * np.log2(prob + 1e-10))
+    
     # 频带能量
     band_energies = []
     for low, high in bands:
@@ -101,5 +114,24 @@ def extract_all_features(data, axis_names, fs, freq_bands):
         for key, val in ff.items():
             feature_vec.append(val)
             feature_names.append(f'{axis}_{key}')
+            
+    # === 新增：跨轴相关系数 ===
+    for i in range(len(axis_names)):
+        for j in range(i + 1, len(axis_names)):
+            corr = np.corrcoef(data[axis_names[i]], data[axis_names[j]])[0, 1]
+            feature_vec.append(corr)
+            feature_names.append(f'corr_{axis_names[i]}_{axis_names[j]}')
+
+    # === 新增：合成幅值特征 ===
+    # 合成幅值 mag = sqrt(x² + y² + z²)
+    mag = np.sqrt(sum(data[ax] ** 2 for ax in axis_names))
+    tf_mag = extract_time_features(mag)
+    for key, val in tf_mag.items():
+        feature_vec.append(val)
+        feature_names.append(f'mag_{key}')
+    ff_mag = extract_freq_features(mag, fs, freq_bands)
+    for key, val in ff_mag.items():
+        feature_vec.append(val)
+        feature_names.append(f'mag_{key}')
 
     return np.array(feature_vec), feature_names

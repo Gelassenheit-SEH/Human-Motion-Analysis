@@ -4,3 +4,4 @@ wisdm_raw/
 __pycache__/
 output/
 *.pyc
+dataset/
