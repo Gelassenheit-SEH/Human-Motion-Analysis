@@ -27,7 +27,7 @@
 ## 处理流程
 
 ```
-原始数据 → 预处理 → 时域特征提取 + 频域特征提取 → MinMax归一化 → KNN/SVM分类 → 评估
+原始数据 → 预处理 → 时域特征提取 + 频域特征提取 → MinMax归一化 → KNN/SVM/RF分类 → 评估
 ```
 
 ### 预处理 ([preprocessing.py](preprocessing.py))
@@ -48,7 +48,8 @@
 ### 分类器 ([train.py](train.py), [test.py](test.py))
 - **归一化**: MinMaxScaler，映射到 [-1, 1]
 - **KNN**: k=5，欧氏距离
-- **SVM**: RBF 核
+- **SVM**: RBF 核，class_weight='balanced'
+- **RF**: n_estimators=100，随机森林
 
 ---
 
@@ -56,22 +57,29 @@
 
 | 数据集 | 分类器 | 准确率 |
 |--------|--------|--------|
-| HAR | KNN (k=5) | **77.74%** |
-| HAR | SVM (RBF) | **84.32%** |
-| WISDM | KNN (k=5) | **85.01%** |
-| WISDM | SVM (RBF) | **85.03%** |
+| HAR | KNN (k=5) | **82.46%** |
+| HAR | SVM (RBF) | **87.14%** |
+| HAR | RF (100) | **90.30%** |
+| WISDM | KNN (k=5) | **88.99%** |
+| WISDM | SVM (RBF) | **86.30%** |
+| WISDM | RF (100) | **92.20%** |
 
 详细分类报告和混淆矩阵见运行输出及 [output/](output/) 目录。
 
 ### 输出文件
 | 文件 | 说明 |
 |------|------|
-| `har_cm.png` / `har_cm_knn.png` | HAR 混淆矩阵 (SVM / KNN) |
-| `wisdm_cm.png` / `wisdm_cm_knn.png` | WISDM 混淆矩阵 (SVM / KNN) |
+| `har_cm.png` / `har_cm_knn.png` / `har_cm_rf.png` | HAR 混淆矩阵 (SVM / KNN / RF) |
+| `wisdm_cm.png` / `wisdm_cm_knn.png` / `wisdm_cm_rf.png` | WISDM 混淆矩阵 (SVM / KNN / RF) |
+| `har_time_features.png` / `wisdm_time_features.png` | 时域特征 7 分组柱状图（各轴×活动） |
+| `har_violin.png` / `wisdm_violin.png` | 时域特征小提琴图（分布形状） |
+| `har_radar.png` / `wisdm_radar.png` | 雷达图（过零率+峰值指纹） |
+| `har_top_feature_per_clf.png` / `wisdm_top_feature_per_clf.png` | 各分类器最重要特征对比 |
+| `har_rf_importance.png` / `har_svm_importance.png` / `har_knn_importance.png` | HAR 特征重要性 (RF / SVM / KNN) |
+| `wisdm_rf_importance.png` / `wisdm_svm_importance.png` / `wisdm_knn_importance.png` | WISDM 特征重要性 (RF / SVM / KNN) |
 | `har_dft.png` / `har_stft.png` | HAR 频谱分析图 |
 | `wisdm_dft.png` / `wisdm_stft.png` | WISDM 频谱分析图 |
-| `har_time_features.png` | HAR 时域特征分析图 |
-| `wisdm_time_features.png` | WISDM 时域特征分析图 |
+| `classifier_comparison.png` | 分类器准确率对比图 |
 
 ---
 
@@ -80,9 +88,7 @@
 
 2.考虑要不要用稍复杂一点的分类算法（Ge：我感觉基础和进阶不太需要，如果训练效果始终调不好可以再用复杂一点的机器学习算法）提高分类准确率。
 
-3.**完善可视化和结果分析**：目前的结果图还不是很好看（~~配色也比较一言难尽~~），一方面当然是要调整信号处理方式（~~和配色~~），另一方面还可以想想用什么别的图来展现我们的结果。比如说可以新增一个模型在两个测试集上预测准确率的对比图，然后再分析导致准确率差异的原因是什么。
-
-3.扩展动作种类、增添划分细度，比如将WISDM数据集中其他目前暂未加入分类类别的动作标签（比如数据集中标注的喝水、吃三明治等细分动作）、PPT上的跌倒检测添加进来，进行更高精度的识别（**挑战2**）
+3.**扩展动作种类、增添划分细度**，比如将WISDM数据集中其他目前暂未加入分类类别的动作标签（比如数据集中标注的喝水、吃三明治等细分动作）、PPT上的跌倒检测添加进来，进行更高精度的识别（**挑战2**）
 
 4.尝试加速度+螺旋仪多传感器融合（**挑战1**）
 
