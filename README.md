@@ -159,6 +159,7 @@ python main.py
 ├── feature_extraction.py   # 特征提取（时域 + 频域）
 ├── train.py                # 数据加载、特征提取编排、模型训练
 ├── test.py                 # 模型评估、混淆矩阵、分类报告
+├── run_viz.py              # 仅运行可视化（跳过流水线，加载缓存）
 ├── download_dataset.py     # 数据集下载脚本
 ├── requirements.txt        # Python 依赖
 ├── dataset/                # 数据集存放目录（需下载）

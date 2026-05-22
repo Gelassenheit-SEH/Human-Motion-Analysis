@@ -433,7 +433,9 @@ def run_har_pipeline():
         'HAR - Feature Distributions by Activity',
     )
     plot_time_features(
-        X_train, y_train, feat_names, activities, acc_axes,
+        X_train, y_train, feat_names, activities,
+        ['body_acc_x', 'body_acc_y', 'body_acc_z',
+         'body_gyro_x', 'body_gyro_y', 'body_gyro_z'],
         os.path.join(OUTPUT_DIR, 'har_time_features.png'),
         'HAR - Time-Domain Features by Activity',
     )
@@ -799,7 +801,8 @@ def run_viz_only(data):
     )
     plot_time_features(
         har['X_train'], har['y_train'], har['feat_names'], har['activities'],
-        ['body_acc_x', 'body_acc_y', 'body_acc_z'],
+        ['body_acc_x', 'body_acc_y', 'body_acc_z',
+         'body_gyro_x', 'body_gyro_y', 'body_gyro_z'],
         os.path.join(OUTPUT_DIR, 'har_time_features.png'),
         'HAR - Time-Domain Features by Activity',
     )
