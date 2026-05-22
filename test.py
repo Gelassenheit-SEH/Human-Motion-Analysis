@@ -59,15 +59,17 @@ def print_results(name, y_test, y_pred, label_map=None, title_prefix=''):
     print(classification_report(y_true_str, y_pred_str, zero_division=0))
 
 
-def plot_confusion_matrix(y_true, y_pred, labels, title, filepath, cmap='Blues'):
-    """绘制并保存混淆矩阵
+def plot_confusion_matrix(y_true, y_pred, labels, title, filepath, cmap_name=None):
+    """Morandi 渐变色混淆矩阵
 
     Args:
         labels: dict {int: name} 或 list of strings
-                如果为 dict, 自动按 key 排序并映射为 name
-        filepath: 完整保存路径 (包括文件名)
+        filepath: 完整保存路径
+        cmap_name: 颜色方案名
     """
-    cm = confusion_matrix(y_true, y_pred)
+    from sklearn.metrics import confusion_matrix as sk_cm
+    cm = sk_cm(y_true, y_pred)
+
     unique_labels = sorted(np.unique(y_true))
 
     if isinstance(labels, dict):
@@ -75,22 +77,43 @@ def plot_confusion_matrix(y_true, y_pred, labels, title, filepath, cmap='Blues')
     else:
         label_names = unique_labels
 
-    fig, ax = plt.subplots(figsize=(7, 5))
-    ax.imshow(cm, cmap=cmap)
+    # Morandi 渐变色系
+    morandi_cmaps = {
+        'Blues':     ['#F0EDEA', '#C4D1DC', '#8FA8C8', '#6A8AA8', '#4A6A88'],
+        'Purples':   ['#F0EDEA', '#D1C8DC', '#B8A8C8', '#8A7AA8', '#605088'],
+        'Oranges':   ['#F0EDEA', '#DCC8B8', '#C8A888', '#A8886A', '#886A50'],
+        'Greens':    ['#F0EDEA', '#C4D1B8', '#A8C4A0', '#7AA880', '#5A8868'],
+        'default':   ['#F5F0ED', '#D5C8C0', '#B5A098', '#8A7A75', '#60504A'],
+    }
+    cmap_colors = morandi_cmaps.get(cmap_name, morandi_cmaps['default'])
+    n_bins = 100
+    cmap_custom = plt.matplotlib.colors.LinearSegmentedColormap.from_list(
+        'morandi', cmap_colors, N=n_bins
+    )
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+    im = ax.imshow(cm, cmap=cmap_custom, interpolation='nearest')
+
     ax.set_xticks(range(len(unique_labels)))
     ax.set_yticks(range(len(unique_labels)))
-    ax.set_xticklabels(label_names, rotation=45)
-    ax.set_yticklabels(label_names)
+    ax.set_xticklabels(label_names, rotation=45, ha='right', fontsize=10)
+    ax.set_yticklabels(label_names, fontsize=10)
 
+    # 标注：只显示数量
     for i in range(len(unique_labels)):
         for j in range(len(unique_labels)):
-            ax.text(j, i, cm[i, j], ha='center', va='center')
+            color = 'white' if cm[i, j] > cm.max() * 0.6 else '#3D3D3D'
+            ax.text(j, i, str(cm[i, j]), ha='center', va='center',
+                    fontsize=10, color=color,
+                    fontweight='bold' if i == j else 'normal')
 
-    ax.set_xlabel('Predicted')
-    ax.set_ylabel('True')
-    ax.set_title(title)
+    ax.set_xlabel('Predicted Label', fontsize=11)
+    ax.set_ylabel('True Label', fontsize=11)
+    ax.set_title(title, fontsize=14, pad=15)
+
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     plt.tight_layout()
-    plt.savefig(filepath, dpi=150)
+    plt.savefig(filepath, dpi=150, bbox_inches='tight')
     plt.close()
     print(f'[Saved] {filepath}')
 
@@ -135,19 +158,19 @@ def evaluate_har(knn, svm, rf, X_test, y_test, activities, output_dir='output'):
         y_test, svm_pred, activities,
         'HAR - SVM Confusion Matrix',
         os.path.join(output_dir, 'har_cm.png'),
-        cmap='Blues',
+        cmap_name='Purples',
     )
     plot_confusion_matrix(
         y_test, knn_pred, activities,
         'HAR - KNN Confusion Matrix',
         os.path.join(output_dir, 'har_cm_knn.png'),
-        cmap='Blues',
+        cmap_name='Oranges',
     )
     plot_confusion_matrix(
         y_test, rf_pred, activities,
         'HAR - RF Confusion Matrix',
         os.path.join(output_dir, 'har_cm_rf.png'),
-        cmap='Greens',
+        cmap_name='Greens',
     )
 
     return (knn_acc, knn_pred), (svm_acc, svm_pred), (rf_acc, rf_pred)
@@ -183,19 +206,19 @@ def evaluate_wisdm(knn, svm, rf, X_test, y_test, output_dir='output'):
         y_test, svm_pred, labels_sorted,
         'WISDM - SVM Confusion Matrix',
         os.path.join(output_dir, 'wisdm_cm.png'),
-        cmap='Purples',
+        cmap_name='Purples',
     )
     plot_confusion_matrix(
         y_test, knn_pred, labels_sorted,
         'WISDM - KNN Confusion Matrix',
         os.path.join(output_dir, 'wisdm_cm_knn.png'),
-        cmap='Oranges',
+        cmap_name='Oranges',
     )
     plot_confusion_matrix(
         y_test, rf_pred, labels_sorted,
         'WISDM - RF Confusion Matrix',
         os.path.join(output_dir, 'wisdm_cm_rf.png'),
-        cmap='Greens',
+        cmap_name='Greens',
     )
 
 
