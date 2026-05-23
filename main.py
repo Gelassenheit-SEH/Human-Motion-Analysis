@@ -1451,7 +1451,7 @@ def main():
 
     run_har_visualization(activities)
 
-    # 【核心修复】：初次运行时，同样要归一化训练集
+    # 初次运行时，同样要归一化训练集
     X_train_s_har = scaler_har.transform(X_train_har)
 
     ablation_res = run_har_ablation(
