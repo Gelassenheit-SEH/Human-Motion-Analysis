@@ -23,7 +23,6 @@ warnings.filterwarnings('ignore')
 plt.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 
-# ========== Morandi Color Palettes ==========
 MORANDI = [
     '#B3C4D1', '#C4A8B8', '#A8C4B0', '#D1C4A8',
     '#C4B8D1', '#B8D1C4', '#D1B8A8', '#B8A8C4',
@@ -96,7 +95,6 @@ def feature_comparison_wisdm(X, y):
 TIME_FEATURE_TYPES = ['mean', 'var', 'zero_crossing']
 TIME_FEATURE_LABELS = ['Mean', 'Variance', 'Zero Crossing']
 
-# ========== Classifier Visualization Functions ==========
 
 def plot_classifier_comparison(results_dict, output_path, title='Classifier Accuracy Comparison'):
     """分组柱状图对比各分类器在各数据集上的准确率"""
@@ -192,7 +190,7 @@ def plot_permutation_importance(model, X, y, feature_names, output_path, n_top=1
     print(f'[Saved] {output_path}')
 
 
-# ========== 7-Feature Time-Domain Grouped Bar ==========
+#  7-Feature Time-Domain Grouped Bar
 TIME_FEAT7 = ['mean', 'var', 'zero_crossing', 'rms', 'peak', 'peak_to_peak', 'waveform_factor']
 TIME_LABEL7 = ['Mean', 'Variance', 'Zero Crossing', 'RMS', 'Peak', 'Peak-to-Peak', 'Waveform Factor']
 
