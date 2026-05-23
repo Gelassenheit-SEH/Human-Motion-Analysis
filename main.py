@@ -15,6 +15,9 @@ import matplotlib.pyplot as plt
 from scipy import signal as scipy_signal, fft
 import zipfile
 import os, sys, pickle, warnings
+import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score
 warnings.filterwarnings('ignore')
 
 plt.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans']
@@ -402,6 +405,73 @@ def plot_top_feature_per_classifier(knn_model, svm_model, rf_model, X_test, y_te
     plt.close()
     print(f'[Saved] {output_path}')
 
+def run_har_ablation(X_train, y_train, X_test, y_test, feature_names, OUTPUT_DIR):
+    """挑战一：加速度计与陀螺仪消融实验"""
+    print("\n" + "=" * 60)
+    print("CHALLENGE 1: HAR SENSOR ABLATION STUDY")
+    print("=" * 60)
+
+    # 动态匹配特征列索引
+    acc_indices = [i for i, name in enumerate(feature_names) if "acc" in name]
+    gyro_indices = [i for i, name in enumerate(feature_names) if "gyro" in name]
+
+    configs = {
+        "Acc Only": acc_indices,
+        "Gyro Only": gyro_indices,
+        "Acc + Gyro (Fused)": list(range(len(feature_names))),
+    }
+
+    ablation_results = {}
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.metrics import accuracy_score
+
+    for name, indices in configs.items():
+        print(f"Training RF for {name}...")
+        X_tr = X_train[:, indices]
+        X_te = X_test[:, indices]
+
+        # 强制单核 n_jobs=1
+        rf = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=1)
+        rf.fit(X_tr, y_train)
+        acc = accuracy_score(y_test, rf.predict(X_te))
+        ablation_results[name] = acc
+        print(f"  -> {name} RF Accuracy: {acc:.4f}")
+
+    # 绘制消融实验对比图
+    fig, ax = plt.subplots(figsize=(7, 5))
+    names = list(ablation_results.keys())
+    accs = list(ablation_results.values())
+
+    bars = ax.bar(
+        names,
+        accs,
+        color=["#7A9BB5", "#B57A9B", "#9BB57A"],
+        width=0.5,
+        edgecolor="white",
+    )
+    ax.set_ylabel("Accuracy", fontsize=11)
+    ax.set_title("Ablation Study: Sensor Fusion (Random Forest)", fontsize=13, pad=15)
+    ax.set_ylim(0, 1.0)
+    ax.grid(axis="y", alpha=0.3, linestyle="--")
+
+    for bar, acc in zip(bars, accs):
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + 0.01,
+            f"{acc:.2%}",
+            ha="center",
+            va="bottom",
+            fontweight="bold",
+            fontsize=10,
+        )
+
+    out_path = os.path.join(OUTPUT_DIR, "ablation_sensor_fusion.png")
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"[Saved Ablation Plot] {out_path}")
+    return ablation_results
+
 
 def run_har_pipeline():
     """HAR 完整流程: 加载 → 特征提取 → 训练 → 评估"""
@@ -786,6 +856,430 @@ def load_pipeline_cache():
     with open(CACHE_FILE, 'rb') as f:
         return pickle.load(f)
 
+def run_har_decision_fusion(
+    X_train, y_train, X_test, y_test, feature_names, OUTPUT_DIR
+):
+    """挑战一：加速度计与陀螺仪的决策级融合"""
+    print("\n" + "=" * 60)
+    print("CHALLENGE 1: HAR DECISION-LEVEL FUSION (LATE FUSION)")
+    print("=" * 60)
+
+    acc_indices = [i for i, name in enumerate(feature_names) if "acc" in name]
+    gyro_indices = [i for i, name in enumerate(feature_names) if "gyro" in name]
+
+    X_train_acc = X_train[:, acc_indices]
+    X_test_acc = X_test[:, acc_indices]
+    X_train_gyro = X_train[:, gyro_indices]
+    X_test_gyro = X_test[:, gyro_indices]
+
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.metrics import accuracy_score
+
+    print("Training independent Random Forest classifiers...")
+    rf_acc = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=1)
+    rf_acc.fit(X_train_acc, y_train)
+
+    rf_gyro = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=1)
+    rf_gyro.fit(X_train_gyro, y_train)
+
+    print("Predicting probabilities on test set...")
+    proba_acc = rf_acc.predict_proba(X_test_acc)
+    proba_gyro = rf_gyro.predict_proba(X_test_gyro)
+
+    # 决策融合：1:1 软投票
+    proba_fused = (proba_acc + proba_gyro) / 2.0
+    y_pred_fused = rf_acc.classes_[np.argmax(proba_fused, axis=1)]
+
+    acc_only_score = accuracy_score(y_test, rf_acc.predict(X_test_acc))
+    gyro_only_score = accuracy_score(y_test, rf_gyro.predict(X_test_gyro))
+    fused_score = accuracy_score(y_test, y_pred_fused)
+
+    print(f"\n--- Decision Fusion Results ---")
+    print(f"  - Accelerometer Only RF Acc: {acc_only_score:.4%}")
+    print(f"  - Gyroscope Only RF Acc:     {gyro_only_score:.4%}")
+    print(f"  - Decision-Level Fused Acc:  {fused_score:.4%}")
+
+    # 绘制决策级融合结果柱状图
+    results = {
+        "Acc Only": acc_only_score,
+        "Gyro Only": gyro_only_score,
+        "Fused": fused_score,
+    }
+    fig, ax = plt.subplots(figsize=(6, 4))
+    bars = ax.bar(
+        results.keys(),
+        results.values(),
+        color=["#7A9BB5", "#B57A9B", "#C49B6C"],
+        width=0.5,
+    )
+    ax.set_ylim(0, 1.0)
+    ax.set_title("Decision Fusion: Late Fusion Accuracy", fontsize=12)
+    ax.set_ylabel("Accuracy")
+    ax.grid(axis="y", alpha=0.3, linestyle="--")
+
+    for bar, acc in zip(bars, results.values()):
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + 0.01,
+            f"{acc:.2%}",
+            ha="center",
+            va="bottom",
+            fontweight="bold",
+            fontsize=9,
+        )
+
+    out_path = os.path.join(OUTPUT_DIR, "decision_fusion_comparison.png")
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=150)
+    plt.close()
+    print(f"[Saved Decision Fusion Plot] {out_path}")
+
+    return fused_score
+
+def run_challenge_enrichment_plots(
+    X_train, y_train, X_test, y_test, feature_names, activities, OUTPUT_DIR
+):
+    """生成挑战一的高级可视化图表 (包含 Gyro, Acc, Fused 三者对比)"""
+    print("\n" + "=" * 60)
+    print("CHALLENGE 1 ENRICHMENT: Generating Advanced Visualizations...")
+    print("=" * 60)
+
+    from sklearn.metrics import confusion_matrix
+    import seaborn as sns
+
+    labels = sorted(list(activities.keys()))
+    target_names = [activities[l] for l in labels]
+
+    # 1. 准备三个模型的特征索引与训练预测
+    acc_idx = [i for i, n in enumerate(feature_names) if "acc" in n]
+    gyro_idx = [i for i, n in enumerate(feature_names) if "gyro" in n]
+
+    print("Fitting RF (Gyro Only)...")
+    rf_gyro = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=1)
+    rf_gyro.fit(X_train[:, gyro_idx], y_train)
+    y_pred_gyro = rf_gyro.predict(X_test[:, gyro_idx])
+
+    print("Fitting RF (Acc Only)...")
+    rf_acc = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=1)
+    rf_acc.fit(X_train[:, acc_idx], y_train)
+    y_pred_acc = rf_acc.predict(X_test[:, acc_idx])
+
+    print("Fitting RF (Fused)...")
+    rf_fused = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=1)
+    rf_fused.fit(X_train, y_train)
+    y_pred_fused = rf_fused.predict(X_test)
+
+    # ==========================================
+    # 图表 1: 各动作类别准确率提升对比图 (包含 Gyro, Acc, Fused)
+    # ==========================================
+    cm_gyro = confusion_matrix(y_test, y_pred_gyro, labels=labels)
+    cm_acc = confusion_matrix(y_test, y_pred_acc, labels=labels)
+    cm_fused = confusion_matrix(y_test, y_pred_fused, labels=labels)
+
+    gyro_class_acc = cm_gyro.diagonal() / cm_gyro.sum(axis=1)
+    acc_class_acc = cm_acc.diagonal() / cm_acc.sum(axis=1)
+    fused_class_acc = cm_fused.diagonal() / cm_fused.sum(axis=1)
+
+    x = np.arange(len(target_names))
+    width = 0.25  # 缩小柱子宽度以容纳三根柱体
+
+    fig, ax = plt.subplots(figsize=(12, 6))  # 稍微加宽画布
+    rects1 = ax.bar(
+        x - width,
+        gyro_class_acc,
+        width,
+        label="Gyro Only",
+        color="#B57A9B",
+        edgecolor="white",
+    )
+    rects2 = ax.bar(
+        x, acc_class_acc, width, label="Acc Only", color="#7A9BB5", edgecolor="white"
+    )
+    rects3 = ax.bar(
+        x + width,
+        fused_class_acc,
+        width,
+        label="Acc + Gyro (Fused)",
+        color="#9BB57A",
+        edgecolor="white",
+    )
+
+    ax.set_ylabel("Accuracy", fontsize=11)
+    ax.set_title(
+        "Per-Class Accuracy: Gyro vs Acc vs Fused (Random Forest)", fontsize=14, pad=15
+    )
+    ax.set_xticks(x)
+    ax.set_xticklabels(target_names, rotation=45, ha="right", fontsize=9)
+    ax.legend(loc="lower right")
+    ax.set_ylim(0, 1.15)  # 提高上限防遮挡
+    ax.grid(axis="y", alpha=0.3, linestyle="--")
+
+    # 添加数值标签 (为了防拥挤，字体稍微调小一点)
+    for rects in [rects1, rects2, rects3]:
+        for rect in rects:
+            height = rect.get_height()
+            ax.annotate(
+                f"{height:.1%}",
+                xy=(rect.get_x() + rect.get_width() / 2, height),
+                xytext=(0, 3),
+                textcoords="offset points",
+                ha="center",
+                va="bottom",
+                fontsize=7,
+                rotation=90,
+            )
+
+    plt.tight_layout()
+    p1_path = os.path.join(OUTPUT_DIR, "enrichment_per_class_acc.png")
+    plt.savefig(p1_path, dpi=150)
+    plt.close()
+    print(f"[Saved] Per-Class Accuracy Plot -> {p1_path}")
+
+    # ==========================================
+    # 图表 2: 差值混淆矩阵 (Fused 减去最强基线 Acc Only)
+    # 注: 这里保留 Fused - Acc，因为 Acc 是主导特征，我们想看加了 Gyro 后修复了哪些错误
+    # ==========================================
+    cm_diff = cm_fused - cm_acc
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+    sns.heatmap(
+        cm_diff,
+        annot=True,
+        fmt="d",
+        cmap="RdBu_r",
+        center=0,
+        xticklabels=target_names,
+        yticklabels=target_names,
+        cbar_kws={"label": "Performance Change (Δ)"},
+    )
+    ax.set_xlabel("Predicted Label", fontsize=11)
+    ax.set_ylabel("True Label", fontsize=11)
+    ax.set_title(
+        "Differential Confusion Matrix (Fused - Acc Only)", fontsize=14, pad=15
+    )
+
+    plt.xticks(rotation=45, ha="right", fontsize=9)
+    plt.yticks(rotation=0, fontsize=9)
+    plt.tight_layout()
+    p2_path = os.path.join(OUTPUT_DIR, "enrichment_diff_cm.png")
+    plt.savefig(p2_path, dpi=150)
+    plt.close()
+    print(f"[Saved] Differential Confusion Matrix -> {p2_path}")
+
+    # ==========================================
+    # 图表 3: 融合模型双色特征重要性 TOP 15
+    # ==========================================
+    importances = rf_fused.feature_importances_
+    indices = np.argsort(importances)[::-1][:15]
+
+    top_features = [feature_names[i] for i in indices]
+    top_importances = importances[indices]
+
+    colors = ["#D489A1" if "gyro" in name else "#658EAD" for name in top_features]
+
+    fig, ax = plt.subplots(figsize=(9, 6))
+    y_pos = np.arange(len(top_features))
+
+    ax.barh(y_pos, top_importances[::-1], color=colors[::-1], edgecolor="white")
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(top_features[::-1], fontsize=9)
+    ax.set_xlabel("Gini Importance", fontsize=11)
+    ax.set_title("Top 15 Feature Importances in Fused Model", fontsize=14, pad=15)
+    ax.grid(axis="x", alpha=0.3, linestyle="--")
+
+    from matplotlib.patches import Patch
+
+    legend_elements = [
+        Patch(facecolor="#658EAD", edgecolor="white", label="Accelerometer Feature"),
+        Patch(facecolor="#D489A1", edgecolor="white", label="Gyroscope Feature"),
+    ]
+    ax.legend(handles=legend_elements, loc="lower right")
+
+    plt.tight_layout()
+    p3_path = os.path.join(OUTPUT_DIR, "enrichment_feature_importance.png")
+    plt.savefig(p3_path, dpi=150)
+    plt.close()
+    print(f"[Saved] Colored Feature Importance -> {p3_path}")
+
+def run_challenge_tradeoff_and_tuning(
+    X_train, y_train, X_test, y_test, feature_names, OUTPUT_DIR
+):
+    """方向一与方向二结合：运行超参数调优曲线与工程推理延迟折中分析"""
+    print("\n" + "=" * 60)
+    print("CHALLENGE 1: Running Trade-off Analysis & Hyperparameter Tuning...")
+    print("=" * 60)
+
+    import time
+
+    acc_idx = [i for i, n in enumerate(feature_names) if "acc" in n]
+    gyro_idx = [i for i, n in enumerate(feature_names) if "gyro" in n]
+
+    # --------------------------------------------------------
+    # 【方向二】超参数演进：测试不同树的数量对全面融合模型的影响
+    # --------------------------------------------------------
+    n_estimators_list = [10, 30, 50, 100, 150, 200]
+    tuning_accuracies = []
+    tuning_times = []
+
+    print("1. Evaluatng n_estimators tuning for Fused Model...")
+    for n_est in n_estimators_list:
+        t0 = time.time()
+        # 建立不同规模的随机森林
+        rf = RandomForestClassifier(n_estimators=n_est, random_state=42, n_jobs=1)
+        rf.fit(X_train, y_train)
+        train_time = time.time() - t0
+
+        acc = accuracy_score(y_test, rf.predict(X_test))
+        tuning_accuracies.append(acc)
+        tuning_times.append(train_time)
+        print(
+            f"  - Trees: {n_est:3d} | Test Acc: {acc:.4%} | Train Time: {train_time:.3f}s"
+        )
+
+    # 绘制图 1：超参数调优双 Y 轴图（准确率 vs 训练时间）
+    fig, ax1 = plt.subplots(figsize=(8, 5))
+    ax1.plot(
+        n_estimators_list,
+        tuning_accuracies,
+        marker="o",
+        color="#9BB57A",
+        linewidth=2,
+        label="Test Accuracy",
+    )
+    ax1.set_xlabel("Number of Trees (n_estimators)", fontsize=11)
+    ax1.set_ylabel("Accuracy", fontsize=11)
+    ax1.set_title(
+        "Hyperparameter Tuning: Accuracy vs Training Cost", fontsize=13, pad=15
+    )
+    ax1.grid(axis="both", alpha=0.3, linestyle="--")
+
+    ax2 = ax1.twinx()
+    ax2.plot(
+        n_estimators_list,
+        tuning_times,
+        marker="s",
+        color="#C49B6C",
+        linestyle="--",
+        linewidth=1.5,
+        label="Training Time",
+    )
+    ax2.set_ylabel("Training Time (seconds)", fontsize=11)
+
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc="lower right")
+
+    p1_path = os.path.join(OUTPUT_DIR, "challenge_tuning_curve.png")
+    plt.tight_layout()
+    plt.savefig(p1_path, dpi=150)
+    plt.close()
+    print(f"[Saved] Tuning Curve Plot -> {p1_path}")
+
+    # --------------------------------------------------------
+    # 【方向一】工程落地折中：固定 100 棵树，对比三种配置的单样本预测延迟
+    # --------------------------------------------------------
+    configs = {
+        "Gyro Only": gyro_idx,
+        "Acc Only": acc_idx,
+        "Acc + Gyro (Fused)": list(range(len(feature_names))),
+    }
+
+    tradeoff_accs = []
+    inference_delays = []  # 单位：微秒 (μs)
+
+    print(
+        "\n2. Evaluating Single-Sample Inference Latency Trade-off (n_estimators=100)..."
+    )
+    for name, idx in configs.items():
+        X_tr = X_train[:, idx]
+        X_te = X_test[:, idx]
+
+        rf = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=1)
+        rf.fit(X_tr, y_train)
+
+        # 循环多次推理以精准测量耗时
+        t0 = time.time()
+        for _ in range(5):
+            _ = rf.predict(X_te)
+        total_time = (time.time() - t0) / 5.0
+
+        # 计算单一样本的预测延迟（微秒）
+        latency_per_sample = (total_time / len(X_te)) * 1e6
+        acc = accuracy_score(y_test, rf.predict(X_te))
+
+        tradeoff_accs.append(acc)
+        inference_delays.append(latency_per_sample)
+        print(
+            f"  - {name:18s} | Acc: {acc:.4%} | Latency per Sample: {latency_per_sample:.2f} μs"
+        )
+
+    # 绘制图 2：工程折中双轴图（准确率柱状图 + 延迟折线图）
+    fig, ax1 = plt.subplots(figsize=(8, 5))
+    x_labels = list(configs.keys())
+    x_pos = np.arange(len(x_labels))
+
+    bars = ax1.bar(
+        x_pos - 0.15,
+        tradeoff_accs,
+        width=0.3,
+        color="#7A9BB5",
+        label="Accuracy",
+        edgecolor="white",
+    )
+    ax1.set_ylabel("Accuracy", fontsize=11)
+    ax1.set_ylim(0, 1.1)
+    ax1.set_xticks(x_pos)
+    ax1.set_xticklabels(x_labels)
+    ax1.set_title(
+        "Engineering Trade-off: Accuracy vs Inference Latency", fontsize=13, pad=15
+    )
+    ax1.grid(axis="y", alpha=0.3, linestyle="--")
+
+    for bar in bars:
+        height = bar.get_height()
+        ax1.text(
+            bar.get_x() + bar.get_width() / 2,
+            height + 0.01,
+            f"{height:.2%}",
+            ha="center",
+            va="bottom",
+            fontsize=9,
+            fontweight="bold",
+        )
+
+    ax2 = ax1.twinx()
+    ax2.plot(
+        x_pos + 0.15,
+        inference_delays,
+        marker="D",
+        color="#D489A1",
+        linewidth=2,
+        markersize=8,
+        label="Latency (μs)",
+    )
+    ax2.set_ylabel("Inference Latency per Sample (μs)", fontsize=11)
+    ax2.set_ylim(0, max(inference_delays) * 1.3)
+
+    for i, val in enumerate(inference_delays):
+        ax2.text(
+            i + 0.15,
+            val + (max(inference_delays) * 0.02),
+            f"{val:.2f} μs",
+            ha="center",
+            va="bottom",
+            fontsize=9,
+            color="#B57A9B",
+            fontweight="bold",
+        )
+
+    ax1.legend(loc="upper left")
+    ax2.legend(loc="upper right")
+
+    p2_path = os.path.join(OUTPUT_DIR, "challenge_tradeoff_latency.png")
+    plt.tight_layout()
+    plt.savefig(p2_path, dpi=150)
+    plt.close()
+    print(f"[Saved] Engineering Trade-off Plot -> {p2_path}")
 
 def run_viz_only(data):
     """仅运行画图部分（加载缓存后调用）"""
@@ -876,65 +1370,136 @@ def run_viz_only(data):
     print_summary()
 
 
+# ==========================================
+# 主入口 (全自动缓存版 - 已修复特征归一化 Bug)
+# ==========================================
 def main():
-    if '--viz-only' in sys.argv:
-        if not os.path.exists(CACHE_FILE):
-            print(f'[Error] Cache not found at {CACHE_FILE}')
-            print('Please run without --viz-only first to generate the cache.')
-            return
+    import sys  # 确保顶部导入了 sys
+
+    CACHE_FILE = os.path.join(OUTPUT_DIR,'cache', 'pipeline_data.pkl')  # 确保文件名与你代码中一致
+
+    if os.path.exists(CACHE_FILE):
+        print("\n" + "=" * 60)
+        print("[⚡ 发现缓存] 直接读取基础特征数据，跳过漫长的预处理与基础训练！")
+        print("=" * 60)
+
         data = load_pipeline_cache()
-        run_viz_only(data)
+
+        X_train_har = data["har"]["X_train"]
+        y_train_har = data["har"]["y_train"]
+        X_test_s_har = data["har"]["X_test_s"]
+        y_test_har = data["har"]["y_test"]
+        feat_names = data["har"]["feat_names"]
+        scaler_har = data["har"]["scaler"]
+        activities = data["har"]["activities"]  # <--- 提取行为标签字典
+
+        X_train_s_har = scaler_har.transform(X_train_har)
+
+        # 运行之前的挑战一代码
+        run_har_ablation(
+            X_train_s_har, y_train_har, X_test_s_har, y_test_har, feat_names, OUTPUT_DIR
+        )
+        run_har_decision_fusion(
+            X_train_s_har, y_train_har, X_test_s_har, y_test_har, feat_names, OUTPUT_DIR
+        )
+
+
+        run_challenge_enrichment_plots(
+            X_train_s_har,
+            y_train_har,
+            X_test_s_har,
+            y_test_har,
+            feat_names,
+            activities,
+            OUTPUT_DIR,
+        )
+
+        run_challenge_tradeoff_and_tuning(
+            X_train_s_har, y_train_har, X_test_s_har, y_test_har, feat_names, OUTPUT_DIR
+        )
+
+        print("\n[✔ 运行完毕] 所有图表已更新至 output/ 文件夹。")
         return
 
-    # ====== 完整流水线 ======
-    (activities, har_acc, rf_model, feat_names,
-     svm_model, knn_model, scaler_har, X_test_s_har, y_test_har,
-     X_train_har, y_train_har) = run_har_pipeline()
+    # 初次运行分支
+    print("\n[未发现缓存] 初次运行，执行完整预处理与训练流程...")
 
-    (wisdm_acc, X_major, y_major, wisdm_feat_names,
-     svm_w, knn_w, rf_w, scaler_w, X_test_s_w, y_test_w) = run_wisdm_pipeline()
+    (
+        activities,
+        har_acc,
+        rf_model,
+        feat_names,
+        svm_model,
+        knn_model,
+        scaler_har,
+        X_test_s_har,
+        y_test_har,
+        X_train_har,
+        y_train_har,
+    ) = run_har_pipeline()
+
+    (
+        wisdm_acc,
+        X_major,
+        y_major,
+        wisdm_feat_names,
+        svm_w,
+        knn_w,
+        rf_w,
+        scaler_w,
+        X_test_s_w,
+        y_test_w,
+    ) = run_wisdm_pipeline()
 
     run_har_visualization(activities)
 
-    # 分类器准确率对比
-    plot_classifier_comparison(
-        {'HAR': har_acc, 'WISDM': wisdm_acc},
-        os.path.join(OUTPUT_DIR, 'classifier_comparison.png'),
-        title='Classifier Accuracy: HAR vs WISDM',
+    # 【核心修复】：初次运行时，同样要归一化训练集
+    X_train_s_har = scaler_har.transform(X_train_har)
+
+    ablation_res = run_har_ablation(
+        X_train_s_har, y_train_har, X_test_s_har, y_test_har, feat_names, OUTPUT_DIR
+    )
+    fusion_res = run_har_decision_fusion(
+        X_train_s_har, y_train_har, X_test_s_har, y_test_har, feat_names, OUTPUT_DIR
     )
 
-    # 构建缓存
+    plot_classifier_comparison(
+        {"HAR": har_acc, "WISDM": wisdm_acc},
+        os.path.join(OUTPUT_DIR, "classifier_comparison.png"),
+        title="Classifier Accuracy: HAR vs WISDM",
+    )
+
     cache_data = {
-        'har': {
-            'X_train': X_train_har,
-            'y_train': y_train_har,
-            'feat_names': feat_names,
-            'activities': activities,
-            'X_test_s': X_test_s_har,
-            'y_test': y_test_har,
-            'scaler': scaler_har,
-            'knn': knn_model,
-            'svm': svm_model,
-            'rf': rf_model,
-            'acc': har_acc,
+        "har": {
+            "X_train": X_train_har,
+            "y_train": y_train_har,
+            "feat_names": feat_names,
+            "activities": activities,
+            "X_test_s": X_test_s_har,
+            "y_test": y_test_har,
+            "scaler": scaler_har,
+            "knn": knn_model,
+            "svm": svm_model,
+            "rf": rf_model,
+            "acc": har_acc,
         },
-        'wisdm': {
-            'X_major': X_major,
-            'y_major': y_major,
-            'feat_names': wisdm_feat_names,
-            'X_test_s': X_test_s_w,
-            'y_test': y_test_w,
-            'scaler': scaler_w,
-            'knn': knn_w,
-            'svm': svm_w,
-            'rf': rf_w,
-            'acc': wisdm_acc,
+        "wisdm": {
+            "X_major": X_major,
+            "y_major": y_major,
+            "feat_names": wisdm_feat_names,
+            "X_test_s": X_test_s_w,
+            "y_test": y_test_w,
+            "scaler": scaler_w,
+            "knn": knn_w,
+            "svm": svm_w,
+            "rf": rf_w,
+            "acc": wisdm_acc,
         },
+        "challenge": {"ablation": ablation_res, "fusion": fusion_res},
     }
     save_pipeline_cache(cache_data)
-
     print_summary()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
