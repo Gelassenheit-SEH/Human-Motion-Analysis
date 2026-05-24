@@ -175,6 +175,7 @@ python main.py
 ```bash
 # 默认：HAR + WISDM，全部 4 个模型，100 轮
 python run_dl_v2.py
+#总运行时长约40-50分钟
 
 # 仅 HAR，仅 ResNet
 python run_dl_v2.py --har --resnet
@@ -199,6 +200,7 @@ python run_dl_v2.py --help    # (暂无 --help，参数见下表)
 | `--cnnlstm` | 仅训练 CNN-LSTM |
 | `--resnet` | 仅训练 ResNet1D |
 | `--epochs N` | 最大训练轮数（默认 100） |
+
 
 ---
 
