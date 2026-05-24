@@ -1,0 +1,7 @@
+*.zip
+har_raw/
+wisdm_raw/
+__pycache__/
+output/
+*.pyc
+dataset/
