@@ -167,3 +167,61 @@ python main.py
 │   └── wisdm/
 └── output/                 # 输出图表
 ```
+
+# run_v2_dl
+
+## 1 使用方法
+
+```bash
+# 默认：HAR + WISDM，全部 4 个模型，100 轮
+python run_dl_v2.py
+
+# 仅 HAR，仅 ResNet
+python run_dl_v2.py --har --resnet
+
+# 仅 WISDM，全部模型，150 轮
+python run_dl_v2.py --wisdm --epochs 150
+
+# 仅 CNN-LSTM
+python run_dl_v2.py --cnnlstm
+
+# 查看所有选项
+python run_dl_v2.py --help    # (暂无 --help，参数见下表)
+```
+
+| 参数 | 说明 |
+|------|------|
+| `--har` | 仅运行 HAR 数据集 |
+| `--wisdm` | 仅运行 WISDM 数据集 |
+| `--all` | 强制运行两个数据集（默认行为） |
+| `--mlp` | 仅训练 MLP |
+| `--cnn` | 仅训练 CNN1D |
+| `--cnnlstm` | 仅训练 CNN-LSTM |
+| `--resnet` | 仅训练 ResNet1D |
+| `--epochs N` | 最大训练轮数（默认 100） |
+
+---
+
+## 2 依赖
+
+在 v1 的 `requirements.txt` 基础上，额外需要：
+
+```
+torch >= 2.0.0        # PyTorch（建议 CUDA 版本）
+matplotlib >= 3.10    # 已包含
+scikit-learn >= 1.7   # 已包含
+```
+
+CUDA 版 PyTorch 安装（Windows）：
+
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/cu124
+```
+
+---
+
+## 3.技术细节
+具体见docs/run_dl_v2.md
+## 4.项目架构
+
+具体见docs/run_dl_v2.md
