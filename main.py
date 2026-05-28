@@ -23,6 +23,7 @@ warnings.filterwarnings('ignore')
 plt.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 
+# ========== Morandi Color Palettes ==========
 MORANDI = [
     '#B3C4D1', '#C4A8B8', '#A8C4B0', '#D1C4A8',
     '#C4B8D1', '#B8D1C4', '#D1B8A8', '#B8A8C4',
@@ -95,6 +96,7 @@ def feature_comparison_wisdm(X, y):
 TIME_FEATURE_TYPES = ['mean', 'var', 'zero_crossing']
 TIME_FEATURE_LABELS = ['Mean', 'Variance', 'Zero Crossing']
 
+# ========== Classifier Visualization Functions ==========
 
 def plot_classifier_comparison(results_dict, output_path, title='Classifier Accuracy Comparison'):
     """分组柱状图对比各分类器在各数据集上的准确率"""
@@ -190,7 +192,7 @@ def plot_permutation_importance(model, X, y, feature_names, output_path, n_top=1
     print(f'[Saved] {output_path}')
 
 
-#  7-Feature Time-Domain Grouped Bar
+# ========== 7-Feature Time-Domain Grouped Bar ==========
 TIME_FEAT7 = ['mean', 'var', 'zero_crossing', 'rms', 'peak', 'peak_to_peak', 'waveform_factor']
 TIME_LABEL7 = ['Mean', 'Variance', 'Zero Crossing', 'RMS', 'Peak', 'Peak-to-Peak', 'Waveform Factor']
 
@@ -967,9 +969,7 @@ def run_challenge_enrichment_plots(
     rf_fused.fit(X_train, y_train)
     y_pred_fused = rf_fused.predict(X_test)
 
-    # ==========================================
     # 图表 1: 各动作类别准确率提升对比图 (包含 Gyro, Acc, Fused)
-    # ==========================================
     cm_gyro = confusion_matrix(y_test, y_pred_gyro, labels=labels)
     cm_acc = confusion_matrix(y_test, y_pred_acc, labels=labels)
     cm_fused = confusion_matrix(y_test, y_pred_fused, labels=labels)
@@ -1033,10 +1033,8 @@ def run_challenge_enrichment_plots(
     plt.close()
     print(f"[Saved] Per-Class Accuracy Plot -> {p1_path}")
 
-    # ==========================================
     # 图表 2: 差值混淆矩阵 (Fused 减去最强基线 Acc Only)
     # 注: 这里保留 Fused - Acc，因为 Acc 是主导特征，我们想看加了 Gyro 后修复了哪些错误
-    # ==========================================
     cm_diff = cm_fused - cm_acc
 
     fig, ax = plt.subplots(figsize=(8, 6))
@@ -1064,9 +1062,7 @@ def run_challenge_enrichment_plots(
     plt.close()
     print(f"[Saved] Differential Confusion Matrix -> {p2_path}")
 
-    # ==========================================
     # 图表 3: 融合模型双色特征重要性 TOP 15
-    # ==========================================
     importances = rf_fused.feature_importances_
     indices = np.argsort(importances)[::-1][:15]
 
@@ -1112,9 +1108,7 @@ def run_challenge_tradeoff_and_tuning(
     acc_idx = [i for i, n in enumerate(feature_names) if "acc" in n]
     gyro_idx = [i for i, n in enumerate(feature_names) if "gyro" in n]
 
-    # --------------------------------------------------------
     # 【方向二】超参数演进：测试不同树的数量对全面融合模型的影响
-    # --------------------------------------------------------
     n_estimators_list = [10, 30, 50, 100, 150, 200]
     tuning_accuracies = []
     tuning_times = []
@@ -1173,9 +1167,7 @@ def run_challenge_tradeoff_and_tuning(
     plt.close()
     print(f"[Saved] Tuning Curve Plot -> {p1_path}")
 
-    # --------------------------------------------------------
     # 【方向一】工程落地折中：固定 100 棵树，对比三种配置的单样本预测延迟
-    # --------------------------------------------------------
     configs = {
         "Gyro Only": gyro_idx,
         "Acc Only": acc_idx,
@@ -1368,9 +1360,8 @@ def run_viz_only(data):
     print_summary()
 
 
-# ==========================================
+
 # 主入口 (全自动缓存版 - 已修复特征归一化 Bug)
-# ==========================================
 def main():
     import sys  # 确保顶部导入了 sys
 
