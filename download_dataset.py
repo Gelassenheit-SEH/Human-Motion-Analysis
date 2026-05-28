@@ -15,6 +15,8 @@ def download_dataset(dataset_name, file_url, dataset_dir):
     zip_path = os.path.join(dataset_dir, f"{dataset_name.lower()}.zip")
 
     r = requests.get(file_url, stream=True, timeout=600, verify=False)
+
+    
     if r.status_code != 200:
         print(f"Failed: HTTP {r.status_code}")
         return
