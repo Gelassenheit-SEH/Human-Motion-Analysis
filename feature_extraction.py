@@ -84,7 +84,52 @@ def extract_freq_features(signal_data, fs, bands):
     return features
 
 
-def extract_all_features(data, axis_names, fs, freq_bands):
+def extract_orientation_features(data, axis_names):
+    """提取姿态角/倾角特征，用于区分静态姿势（坐/站/躺）
+
+    基于加速度计三轴的重力分量计算俯仰角、翻滚角及重力占比，
+    这些特征直接编码"手机/身体如何倾斜"。
+
+    Args:
+        data: dict, {axis_name: 1D_array}，至少包含 3 轴加速度
+        axis_names: axis name 列表，前三轴用于计算角度
+
+    Returns:
+        dict: 包含 pitch/roll 的均值/标准差 + 各轴重力分量占比
+    """
+    ax = data[axis_names[0]]
+    ay = data[axis_names[1]]
+    az = data[axis_names[2]]
+
+    # 俯仰角 (pitch): 绕 Y 轴旋转，前倾/后仰
+    pitch = np.arctan2(ax, np.sqrt(ay ** 2 + az ** 2))
+    # 翻滚角 (roll): 绕 X 轴旋转，左右倾斜
+    roll = np.arctan2(ay, np.sqrt(ax ** 2 + az ** 2))
+
+    # 各轴重力分量占比 (基于绝对值均值)
+    mean_abs_x = np.mean(np.abs(ax))
+    mean_abs_y = np.mean(np.abs(ay))
+    mean_abs_z = np.mean(np.abs(az))
+    total = mean_abs_x + mean_abs_y + mean_abs_z + 1e-10
+
+    # 倾角变化率 (窗口内角度标准差 / 均值绝对值比)
+    pitch_range = np.max(pitch) - np.min(pitch)
+    roll_range = np.max(roll) - np.min(roll)
+
+    return {
+        'pitch_mean': np.mean(pitch),
+        'pitch_std': np.std(pitch),
+        'pitch_range': pitch_range,
+        'roll_mean': np.mean(roll),
+        'roll_std': np.std(roll),
+        'roll_range': roll_range,
+        'gravity_ratio_x': mean_abs_x / total,
+        'gravity_ratio_y': mean_abs_y / total,
+        'gravity_ratio_z': mean_abs_z / total,
+    }
+
+
+def extract_all_features(data, axis_names, fs, freq_bands, add_orientation=True):
     """对多轴信号统一提取时域+频域特征
 
     Args:
@@ -133,5 +178,12 @@ def extract_all_features(data, axis_names, fs, freq_bands):
     for key, val in ff_mag.items():
         feature_vec.append(val)
         feature_names.append(f'mag_{key}')
+
+    # === 新增：姿态角特征（区分坐/站/躺等静态姿势） ===
+    if add_orientation and len(axis_names) >= 3:
+        ori_feat = extract_orientation_features(data, axis_names)
+        for key, val in ori_feat.items():
+            feature_vec.append(val)
+            feature_names.append(key)
 
     return np.array(feature_vec), feature_names

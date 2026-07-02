@@ -243,10 +243,244 @@ def prepare_wisdm(data_dir='./dataset', test_size=0.3, random_state=42):
     )
     print(f"WISDM train: {len(X_train)}, test: {len(X_test)}")
 
-    # 训练
-    scaler, knn, svm ,rf = train_classifiers(X_train, y_train)
+    # 同步分割原始分段数据（供 CNN 使用）
+    major_mask = np.isin(seg_labels, WISDM_MAJOR_ACTS)
+    seg_major = segments[major_mask]
+    seg_train, seg_test, _, _ = train_test_split(
+        seg_major, y_major, test_size=test_size,
+        random_state=random_state, stratify=y_major,
+    )
 
-    return scaler, knn, svm, rf, X_test, y_test
+    # 训练
+    scaler, knn, svm, rf = train_classifiers(X_train, y_train)
+
+    return scaler, knn, svm, rf, X_test, y_test, seg_train, seg_test, X_train, y_train
+
+
+# ========== 深度学习集成 ==========
+
+def prepare_har_raw_for_cnn(inertial_dict, axis_names=None):
+    """将 HAR 惯性信号字典转换为 CNN 输入格式 (N, channels, timesteps)
+
+    Args:
+        inertial_dict: dict {axis_name: ndarray (n_windows × 128)}
+        axis_names:    轴名称列表（决定通道顺序）
+
+    Returns:
+        X_cnn: ndarray (n_windows, n_channels, n_timesteps)
+    """
+    if axis_names is None:
+        axis_names = HAR_AXIS_NAMES
+    channels = [inertial_dict[ax] for ax in axis_names]
+    X_cnn = np.stack(channels, axis=1).astype(np.float32)
+    return X_cnn
+
+
+def prepare_wisdm_raw_for_cnn(segments):
+    """将 WISDM 分段数据转换为 CNN 输入格式 (M, channels, timesteps)
+
+    Args:
+        segments: ndarray (M, win, 3)  → 转置为 (M, 3, win)
+
+    Returns:
+        X_cnn: ndarray (M, 3, win)
+    """
+    return np.transpose(segments, (0, 2, 1)).astype(np.float32)
+
+
+def train_dl_har(X_features, y_train, X_test_features, y_test,
+                 train_inertial, test_inertial, activities,
+                 model_types=('mlp', 'cnn', 'cnnlstm'),
+                 epochs=80, verbose=True):
+    """在 HAR 数据上训练深度学习模型
+
+    Args:
+        X_features:     手工特征训练集 (N_train, n_features)
+        y_train:        训练标签
+        X_test_features: 手工特征测试集
+        y_test:         测试标签
+        train_inertial: 训练集惯性信号 dict
+        test_inertial:  测试集惯性信号 dict
+        activities:     {int: name} 活动映射
+        model_types:    要训练的模型类型元组
+        epochs:         最大训练轮数
+        verbose:        是否打印详情
+
+    Returns:
+        results: dict {model_name: {'model': nn.Module, 'acc': float, 'y_pred': array}}
+        X_cnn_test: CNN 格式的测试数据（用于后续可视化）
+    """
+    from dl_models import (create_model, train_dl_model, evaluate_dl_model,
+                           get_device)
+
+    device = get_device()
+    if verbose:
+        print(f"\n{'=' * 60}")
+        print(f"Deep Learning on HAR (device: {device})")
+        print(f"{'=' * 60}")
+
+    n_classes = len(activities)
+    results = {}
+
+    # ---- 准备 CNN 原始信号数据 ----
+    if 'cnn' in model_types or 'cnnlstm' in model_types:
+        X_cnn_train = prepare_har_raw_for_cnn(train_inertial)
+        X_cnn_test = prepare_har_raw_for_cnn(test_inertial)
+        n_channels, n_timesteps = X_cnn_train.shape[1], X_cnn_train.shape[2]
+        if verbose:
+            print(f"CNN input shape: ({n_channels} channels × {n_timesteps} timesteps)")
+    else:
+        X_cnn_test = None
+
+    # ---- MLP: 基于增强手工特征 ----
+    if 'mlp' in model_types:
+        if verbose:
+            print("\n--- MLP (on enhanced hand-crafted features) ---")
+        mlp = create_model('mlp', X_features.shape[1], n_classes,
+                           hidden_dims=(256, 128, 64), dropout=0.3)
+        mlp, hist, le = train_dl_model(
+            mlp, X_features, y_train, model_type='mlp',
+            batch_size=64, epochs=epochs, lr=0.001,
+            early_stopping_patience=15, verbose=verbose,
+        )
+        mlp_acc, mlp_pred = evaluate_dl_model(
+            mlp, X_test_features, y_test, model_type='mlp',
+            label_map=activities,
+        )
+        results['DL-MLP'] = {'model': mlp, 'acc': mlp_acc, 'y_pred': mlp_pred}
+
+    # ---- CNN1D: 基于原始信号 ----
+    if 'cnn' in model_types:
+        if verbose:
+            print("\n--- CNN1D (on raw inertial signals) ---")
+        cnn = create_model('cnn', (n_channels, n_timesteps), n_classes,
+                           conv_filters=(64, 128, 256), kernel_size=5, dropout=0.3)
+        cnn, hist, le = train_dl_model(
+            cnn, X_cnn_train, y_train, model_type='cnn',
+            batch_size=64, epochs=epochs, lr=0.001,
+            early_stopping_patience=15, verbose=verbose,
+        )
+        cnn_acc, cnn_pred = evaluate_dl_model(
+            cnn, X_cnn_test, y_test, model_type='cnn',
+            label_map=activities,
+        )
+        results['DL-CNN'] = {'model': cnn, 'acc': cnn_acc, 'y_pred': cnn_pred}
+
+    # ---- CNN-LSTM: 基于原始信号 ----
+    if 'cnnlstm' in model_types:
+        if verbose:
+            print("\n--- CNN-LSTM (on raw inertial signals) ---")
+        cnnlstm = create_model('cnnlstm', (n_channels, n_timesteps), n_classes,
+                               conv_filters=(64, 128, 256),
+                               lstm_hidden=128, lstm_layers=2,
+                               kernel_size=5, dropout=0.3)
+        cnnlstm, hist, le = train_dl_model(
+            cnnlstm, X_cnn_train, y_train, model_type='cnnlstm',
+            batch_size=64, epochs=epochs, lr=0.001,
+            early_stopping_patience=15, verbose=verbose,
+        )
+        cl_acc, cl_pred = evaluate_dl_model(
+            cnnlstm, X_cnn_test, y_test, model_type='cnnlstm',
+            label_map=activities,
+        )
+        results['DL-CNNLSTM'] = {'model': cnnlstm, 'acc': cl_acc, 'y_pred': cl_pred}
+
+    return results, X_cnn_test
+
+
+def train_dl_wisdm(X_features, y_train, X_test_features, y_test,
+                   segments_train, segments_test,
+                   model_types=('mlp', 'cnn', 'cnnlstm'),
+                   epochs=80, verbose=True):
+    """在 WISDM 数据上训练深度学习模型
+
+    Args:
+        X_features:      手工特征训练集
+        y_train:         训练标签
+        X_test_features: 手工特征测试集
+        y_test:          测试标签
+        segments_train:  训练集原始分段 (M_train, win, 3)
+        segments_test:   测试集原始分段 (M_test, win, 3)
+        model_types:     模型类型元组
+        epochs:          最大训练轮数
+        verbose:         是否打印详情
+
+    Returns:
+        results: dict {model_name: {'model': nn.Module, 'acc': float, 'y_pred': array}}
+    """
+    from dl_models import (create_model, train_dl_model, evaluate_dl_model,
+                           get_device)
+
+    device = get_device()
+    if verbose:
+        print(f"\n{'=' * 60}")
+        print(f"Deep Learning on WISDM (device: {device})")
+        print(f"{'=' * 60}")
+
+    n_classes = len(np.unique(y_train))
+    results = {}
+
+    # ---- 准备 CNN 原始信号数据 ----
+    if 'cnn' in model_types or 'cnnlstm' in model_types:
+        X_cnn_train = prepare_wisdm_raw_for_cnn(segments_train)
+        X_cnn_test = prepare_wisdm_raw_for_cnn(segments_test)
+        n_channels, n_timesteps = X_cnn_train.shape[1], X_cnn_train.shape[2]
+        if verbose:
+            print(f"CNN input shape: ({n_channels} channels × {n_timesteps} timesteps)")
+    else:
+        X_cnn_test = None
+
+    # ---- MLP ----
+    if 'mlp' in model_types:
+        if verbose:
+            print("\n--- MLP (on enhanced hand-crafted features) ---")
+        mlp = create_model('mlp', X_features.shape[1], n_classes,
+                           hidden_dims=(256, 128, 64), dropout=0.3)
+        mlp, hist, le = train_dl_model(
+            mlp, X_features, y_train, model_type='mlp',
+            batch_size=64, epochs=epochs, lr=0.001,
+            early_stopping_patience=15, verbose=verbose,
+        )
+        mlp_acc, mlp_pred = evaluate_dl_model(
+            mlp, X_test_features, y_test, model_type='mlp', label_map=None,
+        )
+        results['DL-MLP'] = {'model': mlp, 'acc': mlp_acc, 'y_pred': mlp_pred}
+
+    # ---- CNN1D ----
+    if 'cnn' in model_types:
+        if verbose:
+            print("\n--- CNN1D (on raw inertial signals) ---")
+        cnn = create_model('cnn', (n_channels, n_timesteps), n_classes,
+                           conv_filters=(64, 128, 256), kernel_size=5, dropout=0.3)
+        cnn, hist, le = train_dl_model(
+            cnn, X_cnn_train, y_train, model_type='cnn',
+            batch_size=64, epochs=epochs, lr=0.001,
+            early_stopping_patience=15, verbose=verbose,
+        )
+        cnn_acc, cnn_pred = evaluate_dl_model(
+            cnn, X_cnn_test, y_test, model_type='cnn', label_map=None,
+        )
+        results['DL-CNN'] = {'model': cnn, 'acc': cnn_acc, 'y_pred': cnn_pred}
+
+    # ---- CNN-LSTM ----
+    if 'cnnlstm' in model_types:
+        if verbose:
+            print("\n--- CNN-LSTM (on raw inertial signals) ---")
+        cnnlstm = create_model('cnnlstm', (n_channels, n_timesteps), n_classes,
+                               conv_filters=(64, 128, 256),
+                               lstm_hidden=128, lstm_layers=2,
+                               kernel_size=5, dropout=0.3)
+        cnnlstm, hist, le = train_dl_model(
+            cnnlstm, X_cnn_train, y_train, model_type='cnnlstm',
+            batch_size=64, epochs=epochs, lr=0.001,
+            early_stopping_patience=15, verbose=verbose,
+        )
+        cl_acc, cl_pred = evaluate_dl_model(
+            cnnlstm, X_cnn_test, y_test, model_type='cnnlstm', label_map=None,
+        )
+        results['DL-CNNLSTM'] = {'model': cnnlstm, 'acc': cl_acc, 'y_pred': cl_pred}
+
+    return results
 
 
 if __name__ == '__main__':
